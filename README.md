@@ -26,13 +26,14 @@ For the week 1 we have studied different models on which API's can be built we f
 Before running any api we have to check and verify that the specific models has been installed in our machine or not and to do that we have to first read the instructions carefully
 
 1.Licenseplatedetector- This runs on Open CV cv2 model and to run the code for it we have to run the following command:
-
+```bash
 !pip install open-image-models[onnx]
-
+```
 
 2.Whisperapi-This takes a audio file and gives its transcription to run this api we have to run the following commands;
 
+```bash
 pip install git+https://github.com/openai/whisper.git
-
 pip install torch
 pip install torchvision
+```
