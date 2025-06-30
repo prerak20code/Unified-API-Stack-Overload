@@ -1,6 +1,14 @@
 /Notebook Links.txt
 /Output
-/pumave_100.png
-testing
-test
-Saved_models
+
+# Python cache files
+__pycache__/
+*.py[cod]
+*$py.class
+*.pyc
+*.pyo
+
+# Temp code runner files
+*tempcoderunner*
+temp_*.py
+
