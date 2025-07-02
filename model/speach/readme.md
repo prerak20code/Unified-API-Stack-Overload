@@ -22,6 +22,7 @@ pip install -r requirements.txt
 ```bash
 uvicorn app:app --reload --host 0.0.0.0 --port 8000
 ```
+for windows(if above doesnt work):
 ```pwsh
 python -m uvicorn app:app --reload --host 0.0.0.0 --port 8000
 ```
