@@ -3,10 +3,26 @@ import torch
 import numpy as np
 from model_loader import load_pytorch_model, predict_pytorch, load_tf_model, predict_tensorflow, StackedCNNBiLSTM, ParallelModel
 import librosa
+from pydub import AudioSegment
 import os
-
+from fastapi.middleware.cors import CORSMiddleware
+import io
+import tempfile
+origins = [
+    "http://localhost.tiangolo.com",
+    "https://localhost.tiangolo.com",
+    "http://localhost",
+    "http://localhost:8080",
+    "http://localhost:5173"
+]
 app = FastAPI()
-
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=origins,
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 # Emotion mapping
 emotion_map = {
     "RAVDESS": {
@@ -71,21 +87,87 @@ def extract_features(file_path, dataset, sample_rate=48000, n_mfcc=40, n_frames=
     except Exception as e:
         print(f"[ERROR] Feature extraction failed for {file_path}: {e}")
         return None
+def convert_audio_to_wav(file):
+    try:
+        # print(f"converting {file_path} to wav format")
+        audio = AudioSegment.from_file(file)
+        wav_io = io.BytesIO()
 
+        audio.export(wav_io, format="wav")
+        wav_io.seek(0)
+        print("Successfully converted file object to in-memory WAV data.")
+        return wav_io
+    except Exception as e:
+        print(f"[ERROR] Audio conversion failed for {file}: {e}")
+        return None
 @app.post("/predict/")
+# async def predict(file: UploadFile = File(...), dataset: str = Form(...)):
+#     if dataset not in models:
+#         raise HTTPException(status_code=400, detail=f"Invalid dataset: {dataset}. Choose from {list(models.keys())}")
+
+#     temp_path = f"temp_{file.filename}"
+#     print(f"file type: {file.content_type}")
+    
+#     if not file.content_type or file.content_type not in ["audio/wav", "audio/mp3", "audio/m4a", "audio/x-m4a"]:
+#         raise HTTPException(status_code=400, detail="Invalid file type. Please upload a .wav, .mp3, or .m4a file.")
+#     if file.content_type not in ["audio/wav"]:
+#         file = convert_audio_to_wav(file)
+
+#     if not os.path.exists(temp_path):
+#         raise HTTPException(status_code=500, detail="Temporary file creation failed")
+#     try:
+#         with open(temp_path, "wb") as f:
+#             f.write(await file.read())
+        
+#         features = extract_features(temp_path, dataset)
+#         if features is None:
+#             raise HTTPException(status_code=500, detail="Feature extraction failed")
+        
+#         expected_shape = (188, 128) if dataset == "CREMA-D" else (100, 40) if dataset == "RAVDESS" else (100, 13)
+#         if features.shape != expected_shape:
+#             raise HTTPException(status_code=400, detail=f"Expected feature shape {expected_shape}, got {features.shape}")
+        
+#         if dataset == "EMODB":
+#             prediction = predict_tensorflow(models[dataset], features)
+#         else:
+#             prediction = predict_pytorch(models[dataset], features, dataset)
+        
+#         if prediction == -1:
+#             raise HTTPException(status_code=500, detail="Prediction failed")
+        
+#         emotion = emotion_map[dataset].get(prediction, "unknown")
+#         return {"dataset": dataset, "emotion": emotion, "prediction": prediction}
+#     except Exception as e:
+#         print(f"[ERROR] Server error: {e}")
+#         raise HTTPException(status_code=500, detail=f"Server error: {str(e)}")
+#     finally:
+#         if os.path.exists(temp_path):
+#             os.remove(temp_path)
 async def predict(file: UploadFile = File(...), dataset: str = Form(...)):
+    # print(f"Received file: {file.filename} for dataset: {dataset}")
     if dataset not in models:
         raise HTTPException(status_code=400, detail=f"Invalid dataset: {dataset}. Choose from {list(models.keys())}")
+
+    if not file.content_type or file.content_type not in ["audio/wav", "audio/mp3", "audio/m4a", "audio/x-m4a", "audio/webm"]:
+        raise HTTPException(status_code=400, detail="Invalid file type. Please upload a .wav, .mp3, or .m4a file.")
+    print(f"Received file: {file.filename} with content type: {file.content_type}")
+    # Create a temporary file to work with. 'delete=False' is needed for Windows.
+    temp_wav_file = tempfile.NamedTemporaryFile(delete=False, suffix=".wav")
     
-    temp_path = f"temp_{file.filename}"
     try:
-        with open(temp_path, "wb") as f:
-            f.write(await file.read())
-        
-        features = extract_features(temp_path, dataset)
+        # 1. Read the uploaded file's content into memory first
+        contents = await file.read()
+
+        # 2. Convert the in-memory content to a WAV file on disk
+        audio = AudioSegment.from_file(io.BytesIO(contents))
+        audio.export(temp_wav_file.name, format="wav")
+        print(f"Successfully converted {file.filename} to temporary WAV file: {temp_wav_file.name}")
+        # 3. Extract features from the saved temporary WAV file path
+        features = extract_features(temp_wav_file.name, dataset)
         if features is None:
             raise HTTPException(status_code=500, detail="Feature extraction failed")
-        
+
+        # Your existing prediction logic follows...
         expected_shape = (188, 128) if dataset == "CREMA-D" else (100, 40) if dataset == "RAVDESS" else (100, 13)
         if features.shape != expected_shape:
             raise HTTPException(status_code=400, detail=f"Expected feature shape {expected_shape}, got {features.shape}")
@@ -100,9 +182,14 @@ async def predict(file: UploadFile = File(...), dataset: str = Form(...)):
         
         emotion = emotion_map[dataset].get(prediction, "unknown")
         return {"dataset": dataset, "emotion": emotion, "prediction": prediction}
+
     except Exception as e:
-        print(f"[ERROR] Server error: {e}")
-        raise HTTPException(status_code=500, detail=f"Server error: {str(e)}")
+        # Print the full error for debugging
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"An error occurred: {str(e)}")
+        
     finally:
-        if os.path.exists(temp_path):
-            os.remove(temp_path)
+        # 4. Always clean up the temporary file
+        temp_wav_file.close()
+        os.unlink(temp_wav_file.name)
